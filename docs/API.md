@@ -12,7 +12,7 @@ API 與網頁是**同源**的。資料都在伺服器處理，瀏覽器不能自
 | POST | `/api/observe` | `{ "spot": "A02", "plate": "ABC-1234" }` | 實際觀測存入；空車牌清除 |
 | POST | `/api/advance` | `{ "minutes": 60 }` | 後端虛擬時間快轉（15/30/60/180/1440） |
 | POST | `/api/reset` | `{}` | 清空所有模擬資料並重設時鐘 |
-| POST | `/api/ocr` | `{ "image": "data:image/jpeg;base64,..." }` | `candidates`（OCR 候選）與提示 |
+| POST | `/api/ocr` | `{ "image": "data:image/jpeg;base64,..." }` | `candidates`（依一致次數排序的 OCR 候選）、`votes`（各候選在多種影像處理中的一致次數，不等於準確率）與提示 |
 
 ## 例子
 

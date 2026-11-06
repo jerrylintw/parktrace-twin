@@ -177,101 +177,245 @@ $('#replay-live').addEventListener('click', () => { replayId = null; render(); }
 const spotOptions = ['A','B','C'].flatMap(zone => Array.from({length:6}, (_,i) => `<option value="${zone}${String(i+1).padStart(2,'0')}">${zone}${String(i+1).padStart(2,'0')}</option>`));
 $('#observe-spot').innerHTML = spotOptions.join('');
 
-// Camera + OCR: the user can drag a rectangle over the preview to crop plate pixels.
-function closeCamera() {
-  $('#camera-modal').classList.add('hidden');
-  if (videoStream) { videoStream.getTracks().forEach(track=>track.stop()); videoStream=null; }
-  $('#camera-video').srcObject = null;
+// Real laptop webcam: capture only on explicit user gesture; no background or automatic snapshots.
+const cameraVideo = $('#camera-video');
+const cameraCanvas = $('#camera-canvas');
+const cameraPlaceholder = $('#camera-placeholder');
+const cameraStatus = $('#camera-status');
+const cameraLed = $('#camera-led');
+const cameraDevice = $('#camera-device');
+const cameraSnap = $('#snap-photo');
+const cameraOcr = $('#run-ocr');
+
+function setCameraStatus(message, isError=false) {
+  cameraStatus.textContent = message;
+  cameraStatus.style.color = isError ? '#ffae9e' : '#adc1ca';
 }
-function openCamera() { $('#camera-modal').classList.remove('hidden'); }
-$('#open-camera').addEventListener('click', openCamera);
-$('#close-camera').addEventListener('click', closeCamera);
-document.querySelector('[data-close-camera]').addEventListener('click', closeCamera);
-window.addEventListener('keydown', e=> { if (e.key==='Escape') closeCamera(); });
-$('#start-camera').addEventListener('click', async () => {
+function stopCamera(announce=true) {
+  if (videoStream) {
+    videoStream.getTracks().forEach(track => track.stop());
+    videoStream = null;
+  }
+  cameraVideo.srcObject = null;
+  cameraVideo.classList.add('hidden');
+  cameraSnap.disabled = true;
+  cameraLed.textContent = '● OFF';
+  cameraLed.classList.remove('active');
+  cameraLed.setAttribute('aria-label', '鏡頭已關閉');
+  if (!sourcePhoto) cameraPlaceholder.classList.remove('hidden');
+  if (announce) setCameraStatus('鏡頭已關閉。需要時可以重新啟動。');
+}
+async function listCameraDevices() {
   try {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('此瀏覽器或 HTTP 環境不支援攝影機，請改用上傳圖片');
-    if (videoStream) videoStream.getTracks().forEach(track=>track.stop());
-    videoStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
-    $('#camera-video').srcObject = videoStream;
-    toast('鏡頭已開啟；請將車牌放在畫面中央');
-  } catch (error) { toast('無法開啟鏡頭：'+error.message, true); }
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const devices = (await navigator.mediaDevices.enumerateDevices()).filter(x => x.kind === 'videoinput');
+    const activeDevice = videoStream?.getVideoTracks()[0]?.getSettings().deviceId || cameraDevice.value;
+    cameraDevice.replaceChildren();
+    const def = new Option('系統預設攝影機', '');
+    cameraDevice.add(def);
+    devices.forEach((device, i) => {
+      if (device.deviceId) cameraDevice.add(new Option(device.label || `攝影機 ${i+1}`, device.deviceId));
+    });
+    if ([...cameraDevice.options].some(x => x.value === activeDevice)) cameraDevice.value = activeDevice;
+  } catch (_) {
+    // Device listing is optional; a single default laptop camera still works.
+  }
+}
+function cameraErrorMessage(error) {
+  switch (error?.name) {
+    case 'NotAllowedError': case 'PermissionDeniedError': return '攝影機權限遭拒。請在網址列左側開啟攝影機權限，重新整理後重試。';
+    case 'NotFoundError': return '找不到攝影機。請確認筆電相機未停用或接好 USB 攝影機。';
+    case 'NotReadableError': return '攝影機可能被 Zoom、Teams 或其他程式佔用；請先關閉其他相機程式。';
+    case 'OverconstrainedError': return '目前鏡頭不支援指定的解析度，請切換其他攝影機再試。';
+    default: return `無法啟動攝影機：${error?.message || '未知錯誤'}`;
+  }
+}
+async function startCamera() {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    setCameraStatus('相機僅支援 HTTPS 或 localhost；請使用本網站的 HTTPS 網址或改為上傳圖片。', true);
+    return;
+  }
+  const button = $('#start-camera');
+  button.disabled = true;
+  setCameraStatus('正在向瀏覽器申請攝影機權限…');
+  const deviceId = cameraDevice.value;
+  stopCamera(false);
+  try {
+    const preferred = {width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}};
+    if (deviceId) preferred.deviceId = {exact:deviceId};
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({video:preferred,audio:false});
+    } catch (error) {
+      // A laptop camera may only support a low resolution. Try browser defaults.
+      if (!['OverconstrainedError','NotFoundError'].includes(error.name) || deviceId) throw error;
+      stream = await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+    }
+    videoStream = stream;
+    sourcePhoto = null;
+    selectedRect = null;
+    cameraCanvas.classList.add('hidden');
+    cameraPlaceholder.classList.add('hidden');
+    cameraVideo.classList.remove('hidden');
+    cameraVideo.srcObject = stream;
+    await cameraVideo.play();
+    cameraSnap.disabled = false;
+    cameraOcr.disabled = true;
+    cameraLed.textContent = '● LIVE';
+    cameraLed.classList.add('active');
+    cameraLed.setAttribute('aria-label', '攝影機使用中');
+    await listCameraDevices();
+    const settings = stream.getVideoTracks()[0]?.getSettings() || {};
+    const res = settings.width && settings.height ? `（${settings.width}×${settings.height}）` : '';
+    setCameraStatus(`鏡頭已啟動 ${res}；將車牌靠近並保持清晰，按「拍攝車牌」。`);
+  } catch (error) {
+    stopCamera(false);
+    const message = cameraErrorMessage(error);
+    setCameraStatus(message,true);
+    toast(message,true);
+  } finally {
+    button.disabled = false;
+  }
+}
+$('#start-camera').addEventListener('click',startCamera);
+$('#stop-camera').addEventListener('click',()=>stopCamera());
+cameraDevice.addEventListener('change',()=>{if (videoStream) startCamera();});
+$('#focus-camera').addEventListener('click',()=>{
+  $('#camera-workbench').scrollIntoView({behavior:'smooth',block:'start'});
+  if (!videoStream && !sourcePhoto) setCameraStatus('請按「啟動筆電鏡頭」，瀏覽器會要求授權。');
 });
 function loadPhoto(dataUrl) {
   const img = new Image();
-  img.onload = () => { sourcePhoto=img;selectedRect=null;drawPhoto();$('#ocr-result').textContent='可拖曳框選車牌，然後按「辨識此照片」。'; };
-  img.onerror = () => toast('圖片無法載入', true);
+  img.onload = () => {
+    sourcePhoto = img;
+    selectedRect = null;
+    stopCamera(false);
+    cameraPlaceholder.classList.add('hidden');
+    cameraCanvas.classList.remove('hidden');
+    cameraOcr.disabled = false;
+    drawPhoto();
+    $('#ocr-result').replaceChildren();
+    $('#ocr-result').innerHTML = '<strong>辨識結果</strong><span>照片已備妥，建議拖曳框選車牌，按「辨識車牌」。</span>';
+    setCameraStatus(`照片已載入（${img.naturalWidth}×${img.naturalHeight}），框選車牌可提高 OCR 準確度。`);
+  };
+  img.onerror=()=>setCameraStatus('圖片格式無法載入，請改用 JPG 或 PNG。',true);
   img.src = dataUrl;
 }
-$('#snap-photo').addEventListener('click', () => {
-  const video=$('#camera-video');
-  if (!videoStream || !video.videoWidth) {toast('請先開啟鏡頭，或選擇圖片',true);return;}
-  const canvas=document.createElement('canvas');
-  canvas.width=Math.min(1280, video.videoWidth);
-  canvas.height=Math.round(video.videoHeight*canvas.width/video.videoWidth);
-  canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);
-  loadPhoto(canvas.toDataURL('image/jpeg',.86));
+cameraSnap.addEventListener('click',()=>{
+  const w=cameraVideo.videoWidth, h=cameraVideo.videoHeight;
+  if (!videoStream || !w || !h) {
+    setCameraStatus('攝影機尚未準備好，請確認畫面有影像再試。',true);
+    return;
+  }
+  // Preserve the largest practical frame; the browser later crops locally.
+  const buffer = document.createElement('canvas');
+  const ratio = Math.min(1,1920/w);
+  buffer.width = Math.round(w*ratio);
+  buffer.height = Math.round(h*ratio);
+  buffer.getContext('2d').drawImage(cameraVideo,0,0,buffer.width,buffer.height);
+  loadPhoto(buffer.toDataURL('image/jpeg',.90));
 });
-$('#upload-photo').addEventListener('change', event => {
+$('#upload-photo').addEventListener('change',event=>{
   const file=event.target.files?.[0];
   if (!file) return;
-  if (!file.type.startsWith('image/') || file.size>3000000) {toast('請選擇小於 3MB 的圖片',true);return;}
-  const reader=new FileReader();reader.onload=()=>loadPhoto(reader.result);reader.readAsDataURL(file);
+  if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 3_000_000) {
+    setCameraStatus('請選擇不超過 3MB 的 JPG、PNG 或 WebP 圖片。',true);
+    return;
+  }
+  const reader=new FileReader();
+  reader.onload=()=>loadPhoto(reader.result);
+  reader.onerror=()=>setCameraStatus('讀取照片失敗。',true);
+  reader.readAsDataURL(file);
+  event.target.value = '';
 });
 function drawPhoto() {
   if (!sourcePhoto) return;
-  const canvas=$('#camera-canvas');
-  const width=Math.min(640,sourcePhoto.naturalWidth);
+  const width=Math.min(1000,sourcePhoto.naturalWidth);
   const height=Math.max(1,Math.round(sourcePhoto.naturalHeight*width/sourcePhoto.naturalWidth));
-  canvas.width=width;canvas.height=height;
-  const ctx=canvas.getContext('2d');ctx.drawImage(sourcePhoto,0,0,width,height);
-  if (selectedRect && selectedRect.w>5 && selectedRect.h>5) {
-    ctx.fillStyle='#49e1bb20';ctx.strokeStyle='#72e5c4';ctx.lineWidth=3;
+  cameraCanvas.width=width;
+  cameraCanvas.height=height;
+  const ctx=cameraCanvas.getContext('2d');
+  ctx.drawImage(sourcePhoto,0,0,width,height);
+  if(selectedRect&&selectedRect.w>5&&selectedRect.h>5){
+    ctx.fillStyle='#49e1bb25';ctx.strokeStyle='#72e5c4';ctx.lineWidth=4;
     ctx.fillRect(selectedRect.x,selectedRect.y,selectedRect.w,selectedRect.h);
     ctx.strokeRect(selectedRect.x,selectedRect.y,selectedRect.w,selectedRect.h);
   }
 }
 function pointerCoord(event) {
-  const c=$('#camera-canvas'), r=c.getBoundingClientRect();
-  return {x:(event.clientX-r.left)*c.width/r.width,y:(event.clientY-r.top)*c.height/r.height};
+  const rect=cameraCanvas.getBoundingClientRect();
+  return {x:Math.max(0,Math.min(cameraCanvas.width,(event.clientX-rect.left)*cameraCanvas.width/rect.width)),
+    y:Math.max(0,Math.min(cameraCanvas.height,(event.clientY-rect.top)*cameraCanvas.height/rect.height))};
 }
-$('#camera-canvas').addEventListener('pointerdown',e => {if(!sourcePhoto)return;dragStart=pointerCoord(e);$('#camera-canvas').setPointerCapture(e.pointerId);});
-$('#camera-canvas').addEventListener('pointermove',e=>{
-  if (!dragStart) return;
-  const pt=pointerCoord(e); selectedRect={x:Math.max(0,Math.min(dragStart.x,pt.x)),y:Math.max(0,Math.min(dragStart.y,pt.y)),w:Math.abs(pt.x-dragStart.x),h:Math.abs(pt.y-dragStart.y)};
+cameraCanvas.addEventListener('pointerdown',event=>{
+  if(!sourcePhoto) return;
+  dragStart=pointerCoord(event);
+  cameraCanvas.setPointerCapture(event.pointerId);
+});
+cameraCanvas.addEventListener('pointermove',event=>{
+  if(!dragStart)return;
+  const pt=pointerCoord(event);
+  selectedRect={x:Math.min(dragStart.x,pt.x),y:Math.min(dragStart.y,pt.y),
+    w:Math.abs(pt.x-dragStart.x),h:Math.abs(pt.y-dragStart.y)};
   drawPhoto();
 });
-$('#camera-canvas').addEventListener('pointerup',()=>{dragStart=null;});
+cameraCanvas.addEventListener('pointerup',()=>{dragStart=null;});
+cameraCanvas.addEventListener('pointercancel',()=>{dragStart=null;});
+// Keyboard users can OCR the full image without needing a crop.
 function getPhotoData() {
-  const src=$('#camera-canvas');
-  const ratioX=sourcePhoto.naturalWidth/src.width,ratioY=sourcePhoto.naturalHeight/src.height;
-  const rect=(selectedRect && selectedRect.w>15 && selectedRect.h>12)?selectedRect:{x:0,y:0,w:src.width,h:src.height};
-  const cropped=document.createElement('canvas');
-  const factor=Math.min(1,1600/(rect.w*ratioX));
-  cropped.width=Math.max(1,Math.round(rect.w*ratioX*factor));cropped.height=Math.max(1,Math.round(rect.h*ratioY*factor));
-  cropped.getContext('2d').drawImage(sourcePhoto,rect.x*ratioX,rect.y*ratioY,rect.w*ratioX,rect.h*ratioY,0,0,cropped.width,cropped.height);
-  return cropped.toDataURL('image/jpeg',.84);
+  if (!sourcePhoto) throw new Error('尚未拍照');
+  const scaleX=sourcePhoto.naturalWidth/cameraCanvas.width;
+  const scaleY=sourcePhoto.naturalHeight/cameraCanvas.height;
+  const box=(selectedRect&&selectedRect.w>20&&selectedRect.h>12)?selectedRect:{x:0,y:0,w:cameraCanvas.width,h:cameraCanvas.height};
+  const crop=document.createElement('canvas');
+  const sourceW=box.w*scaleX;
+  const factor=Math.min(3,Math.max(.1,1400/sourceW));
+  crop.width=Math.max(1,Math.round(sourceW*factor));
+  crop.height=Math.max(1,Math.round(box.h*scaleY*factor));
+  crop.getContext('2d').drawImage(sourcePhoto,box.x*scaleX,box.y*scaleY,sourceW,box.h*scaleY,0,0,crop.width,crop.height);
+  return crop.toDataURL('image/jpeg',.89);
 }
-$('#run-ocr').addEventListener('click', async () => {
-  if (!sourcePhoto) {toast('請先拍照或上傳圖片',true);return;}
-  const button=$('#run-ocr');button.disabled=true;button.textContent='OCR 辨識中...';
+cameraOcr.addEventListener('click', async ()=>{
+  if(!sourcePhoto){setCameraStatus('請先拍攝車牌或上傳照片。',true);return;}
+  cameraOcr.disabled=true;
+  cameraOcr.textContent='OCR 辨識中…';
+  setCameraStatus('正在分析照片，請稍候；車牌結果需人工核對。');
   try {
-    const result=await post('/api/ocr',{image:getPhotoData()});
-    $('#ocr-result').innerHTML=result.candidates.length
-      ? '<strong>候選車牌（人工核對後可用於進場或出場）</strong><div>'+result.candidates.map(p=>`<div>${esc(p)} <button type="button" data-ocr-entry="${esc(p)}">帶入進場</button><button type="button" data-ocr-exit="${esc(p)}">帶入出場</button></div>`).join('')+'</div><small>辨識可能有錯，請人工核對原始圖片再確認。</small>'
-      : '這次沒有辨識到標準車牌；請將裁切框縮到車牌，或手動輸入。OCR 在模糊、背光、傾斜場景可能失敗。';
-  } catch (error) { $('#ocr-result').textContent = '辨識失敗：'+error.message; }
-  finally {button.disabled=false;button.textContent='辨識此照片';}
+    const response=await post('/api/ocr',{image:getPhotoData()});
+    const result=$('#ocr-result');
+    if(response.candidates?.length){
+      const counts=response.votes || {};
+      result.innerHTML='<strong>辨識候選車牌（請人工核對）</strong>'+response.candidates.map(p=>
+        `<div class="ocr-candidate"><b>${esc(p)}</b><small>一致結果 ${Number(counts[p]||1)} 次</small>`+
+        `<button type="button" data-ocr-entry="${esc(p)}">帶入進場</button><button type="button" data-ocr-exit="${esc(p)}">帶入出場</button></div>`
+      ).join('')+'<small>多次辨識一致 ≠ 保證正確。登記前請比對照片。</small>';
+      setCameraStatus(`找到 ${response.candidates.length} 組候選車牌。請核對後帶入表單。`);
+    } else {
+      result.innerHTML='<strong>本次未找到明確車牌</strong><span>請將車牌靠近鏡頭、增加光線、保持水平，或拍照後框選車牌重試；也可手動輸入。</span>';
+      setCameraStatus('尚未辨識成功。可縮小框選範圍、提高亮度後再試。',true);
+    }
+  } catch(error) {
+    setCameraStatus(`辨識失敗：${error.message}`,true);
+    $('#ocr-result').textContent=`無法辨識：${error.message}`;
+  } finally {
+    cameraOcr.textContent='辨識車牌 →';
+    cameraOcr.disabled=false;
+  }
 });
-$('#ocr-result').addEventListener('click',e=>{
-  const button=e.target.closest('[data-ocr-entry],[data-ocr-exit]');
+$('#ocr-result').addEventListener('click',event=>{
+  const button=event.target.closest('[data-ocr-entry],[data-ocr-exit]');
   if(!button)return;
-  const toExit = button.hasAttribute('data-ocr-exit');
-  const plate = toExit ? button.dataset.ocrExit : button.dataset.ocrEntry;
-  $(toExit ? '#exit-plate' : '#entry-plate').value = plate;
-  closeCamera();
-  toast(`已填入${toExit?'出場':'進場'}候選車牌，請核對無誤後再確認`);
+  const toExit=button.hasAttribute('data-ocr-exit');
+  const plate=toExit?button.dataset.ocrExit:button.dataset.ocrEntry;
+  const field=$(toExit?'#exit-plate':'#entry-plate');
+  field.value=plate;
+  // When pasted to an entry/exit field, make the form visible, but do not submit it.
+  document.querySelector('[data-tab="overview"]').click();
+  field.scrollIntoView({behavior:'smooth',block:'center'});
+  field.focus({preventScroll:true});
+  toast(`已填入${toExit?'出場':'進場'}候選車牌「${plate}」，請核對後手動確認`);
 });
+window.addEventListener('pagehide',()=>stopCamera(false));
 
 refresh();
 setInterval(() => refresh(true), 12000);

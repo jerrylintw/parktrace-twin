@@ -26,7 +26,7 @@
     <div class="sidebar-bottom">
       <span class="live-status"><i></i> SIMULATION ONLINE</span>
       <p>這是可公開操作的課堂展示站，請勿輸入真實個資。操作與紀錄會共用後端資料庫。</p>
-      <div class="version">資料結構期中 Project <b>v1.0</b></div>
+      <div class="version">資料結構期中 Project <b>v1.1</b></div>
     </div>
   </aside>
 
@@ -37,6 +37,36 @@
     </header>
 
     <main>
+      <div class="top-dashboard">
+        <section class="panel camera-workbench" id="camera-workbench" aria-labelledby="camera-title">
+          <div class="camera-heading">
+            <div>
+              <span class="section-kicker">LAPTOP CAMERA / PLATE OCR</span>
+              <h2 id="camera-title">筆電攝影機 · 車牌辨識</h2>
+              <p>左上方直接拍照、框選車牌，再辨識進場或出場。</p>
+            </div>
+            <span class="camera-led" id="camera-led" aria-label="鏡頭未開啟">● OFF</span>
+          </div>
+          <div class="camera-preview" id="camera-preview">
+            <video id="camera-video" muted autoplay playsinline aria-label="筆電攝影機即時畫面"></video>
+            <canvas id="camera-canvas" class="hidden" width="640" height="360" aria-label="拍攝照片；使用滑鼠拖曳框選車牌" tabindex="0"></canvas>
+            <div class="camera-placeholder" id="camera-placeholder"><span class="camera-glyph">◎</span><strong>尚未開啟攝影機</strong><small>點擊下方「啟動筆電鏡頭」並允許權限</small></div>
+            <div class="camera-preview-tip" id="camera-preview-tip">將車牌置於中央，照片可拖曳框選</div>
+          </div>
+          <div class="camera-device-row">
+            <label for="camera-device">攝影機來源</label>
+            <select id="camera-device" aria-label="選擇攝影機"><option value="">預設筆電鏡頭</option></select>
+          </div>
+          <div class="camera-buttons">
+            <button id="start-camera" class="btn outline" type="button">◎ 啟動筆電鏡頭</button>
+            <button id="snap-photo" class="btn outline" type="button" disabled>▣ 拍攝車牌</button>
+            <label class="btn outline upload-label" for="upload-photo">↑ 上傳圖片<input type="file" id="upload-photo" accept="image/png,image/jpeg,image/webp" hidden></label>
+            <button id="run-ocr" class="btn primary" type="button" disabled>辨識車牌 →</button>
+          </div>
+          <div class="camera-bottom-line"><span id="camera-status" role="status" aria-live="polite">網站使用 HTTPS，鏡頭需經瀏覽器授權。</span><button type="button" class="text-btn" id="stop-camera">關閉鏡頭</button></div>
+          <div id="ocr-result" class="ocr-result" aria-live="polite"><strong>辨識結果</strong><span>拍照或選圖後，先框選車牌再按「辨識車牌」。</span></div>
+          <p class="camera-privacy">照片僅供本次 OCR 分析、不會儲存。請核對候選車牌後再點「帶入進場／出場」及登記。</p>
+        </section>
       <section class="stats" aria-label="停車場即時數據">
         <article class="stat"><span>總車位數 <i>↗</i></span><div class="stat-value" id="metric-total">—</div><small>3 區 / 18 個停車位</small></article>
         <article class="stat"><span>場內車輛 <i>◉</i></span><div class="stat-value" id="metric-occupied">—</div><small id="metric-rate">空間使用率 —</small></article>
@@ -44,6 +74,7 @@
         <article class="stat"><span>候補等候 <i>◷</i></span><div class="stat-value" id="metric-waiting">—</div><small>FIFO / 先進先出</small></article>
         <article class="stat"><span>累積模擬收入 <i>NT$</i></span><div class="stat-value" id="metric-revenue">—</div><small>僅計入已完成出場</small></article>
       </section>
+      </div>
 
       <div class="tab-panel" id="tab-overview">
         <div class="layout-main">
@@ -58,7 +89,7 @@
           </div>
           <div class="column-side">
             <section class="panel action-panel">
-              <div class="panel-head compact"><div><span class="section-kicker">GATE CONTROL</span><h2>模擬車輛進出</h2></div><button id="open-camera" class="icon-btn" title="開啟攝影機辨識">◎ 攝影機</button></div>
+              <div class="panel-head compact"><div><span class="section-kicker">GATE CONTROL</span><h2>模擬車輛進出</h2></div><button id="focus-camera" class="icon-btn" title="移至左上方的攝影機">↑ 攝影機辨識</button></div>
               <form id="entry-form" class="form-stack"><label for="entry-plate">入場車牌</label><input id="entry-plate" placeholder="例：ABC-1234" maxlength="9" autocomplete="off" required><label for="vehicle-type">車輛類型</label><select id="vehicle-type"><option value="normal">一般車輛</option><option value="ev">電動車（優先充電車位）</option><option value="accessible">無障礙（優先專用車位）</option></select><button class="btn primary" type="submit">＋ 登記進場 / 自動配位</button></form>
               <div class="form-divider">GATE OUT / CHECKOUT</div>
               <form id="exit-form" class="form-stack"><label for="exit-plate">出場車牌</label><input id="exit-plate" placeholder="輸入已入場車牌" maxlength="9" autocomplete="off" required><button class="btn secondary" type="submit">計算費用並出場 →</button></form>
@@ -100,9 +131,5 @@
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<div class="modal hidden" id="camera-modal" role="dialog" aria-modal="true" aria-label="攝影機 OCR 車牌辨識">
-  <div class="modal-backdrop" data-close-camera></div>
-  <div class="modal-content"><div class="modal-header"><div><span class="section-kicker">REAL CAMERA / OCR</span><h2>拍照辨識車牌</h2></div><button class="icon-btn" id="close-camera" aria-label="關閉">✕</button></div><p>允許瀏覽器使用攝影機，或直接上傳照片；可在預覽圖拖曳框選車牌以提高辨識率。照片不會保存到資料庫。</p><video id="camera-video" autoplay muted playsinline></video><canvas id="camera-canvas" width="640" height="360" aria-label="車牌照片預覽與裁切"></canvas><div class="camera-actions"><button class="btn outline" id="start-camera">開啟鏡頭</button><button class="btn outline" id="snap-photo">拍攝畫面</button><label class="btn outline upload-label">從裝置選圖<input type="file" id="upload-photo" accept="image/*" capture="environment" hidden></label><button class="btn primary" id="run-ocr">辨識此照片</button></div><div id="ocr-result" class="ocr-result">尚未拍攝。攝影機通常需要 HTTPS 或 localhost 才能啟用。</div></div>
-</div>
 </body>
 </html>
