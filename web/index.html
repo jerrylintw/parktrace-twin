@@ -59,13 +59,14 @@
           </div>
           <div class="camera-buttons">
             <button id="start-camera" class="btn outline" type="button">◉ 開啟筆電攝影機（開始辨識）</button>
+            <button id="burst-ocr" class="btn outline" type="button" disabled>▣ 連拍 5 張辨識（推薦）</button>
             <button id="snap-photo" class="btn outline" type="button" disabled>▣ 拍攝車牌</button>
             <label class="btn outline upload-label" for="upload-photo">↑ 上傳圖片<input type="file" id="upload-photo" accept="image/png,image/jpeg,image/webp" hidden></label>
             <button id="run-ocr" class="btn primary" type="button" disabled>辨識車牌 →</button>
           </div>
           <div class="camera-bottom-line"><span id="camera-status" role="status" aria-live="polite">網站使用 HTTPS，鏡頭需經瀏覽器授權。</span><button type="button" class="text-btn" id="stop-camera">關閉鏡頭</button></div>
           <div id="ocr-result" class="ocr-result" aria-live="polite"><strong>辨識結果</strong><span>拍照或選圖後可框選車牌；系統也會嘗試自動校正與辨識。</span></div>
-          <p class="camera-privacy">照片僅供本次 OCR 分析、不會儲存。請核對候選車牌後再點「帶入進場／出場」及登記。</p>
+          <p class="camera-privacy">單張或連拍照片僅供本次 OCR 分析、不會儲存。請核對候選車牌後再點「帶入進場／出場」及登記。</p>
         </section>
       <section class="stats" aria-label="停車場即時數據">
         <article class="stat"><span>總車位數 <i>↗</i></span><div class="stat-value" id="metric-total">—</div><small>3 區 / 18 個停車位</small></article>

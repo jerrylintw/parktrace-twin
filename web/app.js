@@ -186,6 +186,7 @@ const cameraLed = $('#camera-led');
 const cameraDevice = $('#camera-device');
 const cameraSnap = $('#snap-photo');
 const cameraOcr = $('#run-ocr');
+const cameraBurst = $('#burst-ocr');
 
 function setCameraStatus(message, isError=false) {
   cameraStatus.textContent = message;
@@ -199,6 +200,7 @@ function stopCamera(announce=true) {
   cameraVideo.srcObject = null;
   cameraVideo.classList.add('hidden');
   cameraSnap.disabled = true;
+  cameraBurst.disabled = true;
   cameraLed.textContent = '● OFF';
   cameraLed.classList.remove('active');
   cameraLed.setAttribute('aria-label', '鏡頭已關閉');
@@ -260,6 +262,7 @@ async function startCamera() {
     cameraVideo.srcObject = stream;
     await cameraVideo.play();
     cameraSnap.disabled = false;
+    cameraBurst.disabled = false;
     cameraOcr.disabled = true;
     cameraLed.textContent = '● LIVE';
     cameraLed.classList.add('active');
@@ -375,32 +378,90 @@ function getPhotoData() {
   crop.getContext('2d').drawImage(sourcePhoto,box.x*scaleX,box.y*scaleY,sourceW,box.h*scaleY,0,0,crop.width,crop.height);
   return crop.toDataURL('image/jpeg',.96);
 }
-cameraOcr.addEventListener('click', async ()=>{
-  if(!sourcePhoto){setCameraStatus('請先拍攝車牌或上傳照片。',true);return;}
-  cameraOcr.disabled=true;
-  cameraOcr.textContent='OCR 辨識中…';
-  setCameraStatus('正在分析照片，請稍候；車牌結果需人工核對。');
+function showOcrResponse(response) {
+  const output = $('#ocr-result');
+  const frameCount = Number(response.frames_total || 1);
+  const support = response.frame_support || {};
+  const level = ['high','medium','low'].includes(response.confidence) ? response.confidence : 'low';
+  const levelName = {high:'高一致性',medium:'部分一致',low:'低一致性／單張'}[level];
+  const lead = response.candidates?.[0];
+  const leadSupport = Number(support[lead] || 0);
+  const hint = frameCount > 1 ? `${leadSupport}/${frameCount} 個獨立影格支持首選` : '單張照片不能交叉驗證';
+  if (response.candidates?.length) {
+    output.innerHTML = '<strong>辨識候選車牌（仍須人工核對）</strong>'+
+      `<div class="ocr-summary ${level}">${levelName} · ${hint}</div>`+
+      response.candidates.map((plate, i) =>
+        `<div class="ocr-candidate"><b>${esc(plate)}</b>`+
+        `<small>${frameCount > 1 ? esc(`${Number(support[plate] || 0)} / ${frameCount} 影格`) : '單張候選'}${i === 0 ? ' · 首選' : ''}</small>`+
+        `<button type="button" data-ocr-entry="${esc(plate)}">帶入進場</button>`+
+        `<button type="button" data-ocr-exit="${esc(plate)}">帶入出場</button></div>`
+      ).join('') +
+      (response.quality_tips || []).map(t=>`<span class="ocr-tip">⚠ ${esc(t)}</span>`).join('')+
+      '<span class="ocr-warning">一致性不是辨識正確率；請逐字核對後再登記。</span>';
+    setCameraStatus(`找到 ${response.candidates.length} 組候選；${levelName}，${hint}。${response.detected_plate ? '已嘗試校正車牌透視。' : ''}`);
+  } else {
+    output.innerHTML='<strong>沒有辨識到完整車牌</strong>'+
+      '<span>請讓車牌佔據更大畫面、重新對焦或框選車牌後重試，也可以手動輸入。</span>'+
+      (response.quality_tips || []).map(t=>`<span class="ocr-tip">⚠ ${esc(t)}</span>`).join('');
+    setCameraStatus('目前沒有可確認的候選車牌，請重新對焦或縮小裁切範圍。', true);
+  }
+}
+async function recognizePhotos(images, kind) {
+  cameraOcr.disabled = true;
+  cameraBurst.disabled = true;
+  const original = cameraOcr.textContent;
+  cameraOcr.textContent = '辨識中…';
   try {
-    const response=await post('/api/ocr',{image:getPhotoData()});
-    const result=$('#ocr-result');
-    if(response.candidates?.length){
-      const counts=response.votes || {};
-      result.innerHTML='<strong>辨識候選車牌（請人工核對）</strong>'+response.candidates.map(p=>
-        `<div class="ocr-candidate"><b>${esc(p)}</b><small>綜合辨識分數 ${Number(counts[p]||1)}</small>`+
-        `<button type="button" data-ocr-entry="${esc(p)}">帶入進場</button><button type="button" data-ocr-exit="${esc(p)}">帶入出場</button></div>`
-      ).join('')+'<small>透視校正及分段辨識可能降低誤判，但仍須逐字核對照片。</small>';
-      setCameraStatus(`找到 ${response.candidates.length} 組候選車牌${response.detected_plate?"（已自動校正車牌角度）":""}。請逐字核對。`);
-    } else {
-      result.innerHTML='<strong>本次未找到明確車牌</strong><span>請將車牌靠近鏡頭、增加光線、保持水平，或拍照後框選車牌重試；也可手動輸入。</span>';
-      setCameraStatus('尚未辨識成功。可縮小框選範圍、提高亮度後再試。',true);
-    }
-  } catch(error) {
-    setCameraStatus(`辨識失敗：${error.message}`,true);
+    setCameraStatus(kind === 'burst' ? '已擷取不同時間的 5 張影格，正在比對辨識…' : '正在分析單張照片…');
+    const response = await post('/api/ocr', kind === 'burst' ? {images} : {image:images[0]});
+    showOcrResponse(response);
+  } catch (error) {
+    setCameraStatus(`辨識失敗：${error.message}`, true);
     $('#ocr-result').textContent=`無法辨識：${error.message}`;
   } finally {
-    cameraOcr.textContent='辨識車牌 →';
-    cameraOcr.disabled=false;
+    cameraOcr.textContent = original;
+    cameraOcr.disabled = !sourcePhoto;
+    cameraBurst.disabled = !videoStream;
   }
+}
+function webcamFrame() {
+  if (!videoStream || !cameraVideo.videoWidth) throw new Error('請先開啟攝影機並確認預覽畫面正常');
+  const buffer = document.createElement('canvas');
+  const ratio = Math.min(1, 1280 / cameraVideo.videoWidth);
+  buffer.width = Math.max(1, Math.round(cameraVideo.videoWidth * ratio));
+  buffer.height = Math.max(1, Math.round(cameraVideo.videoHeight * ratio));
+  buffer.getContext('2d').drawImage(cameraVideo, 0, 0, buffer.width, buffer.height);
+  return buffer.toDataURL('image/jpeg', .81);
+}
+async function captureBurst() {
+  if (!videoStream) {setCameraStatus('請先開啟攝影機。', true);return;}
+  cameraBurst.disabled=true;
+  cameraSnap.disabled=true;
+  $('#start-camera').disabled=true;
+  try {
+    const photos=[];
+    for (let index=0; index<5; index++) {
+      if (!videoStream) throw new Error('攝影機已關閉，連拍中止');
+      // Delay between frames to provide fresh optical evidence, rather than
+      // voting five reprocessed copies of a single screenshot.
+      await new Promise(resolve=>setTimeout(resolve, 230));
+      photos.push(webcamFrame());
+      setCameraStatus(`連拍中：已拍攝 ${index+1}/5 張，請保持車牌在畫面中央。`);
+    }
+    await recognizePhotos(photos, 'burst');
+  } catch (error) {
+    setCameraStatus(error.message, true);
+  } finally {
+    cameraBurst.disabled=!videoStream;
+    cameraSnap.disabled=!videoStream;
+    $('#start-camera').disabled=false;
+  }
+}
+cameraBurst.addEventListener('click',captureBurst);
+cameraOcr.addEventListener('click',async ()=>{
+  if (!sourcePhoto) {setCameraStatus('請先拍照或上傳圖片。',true);return;}
+  try {await recognizePhotos([getPhotoData()], 'single');}
+  catch(error){setCameraStatus(error.message, true);}
 });
 $('#ocr-result').addEventListener('click',event=>{
   const button=event.target.closest('[data-ocr-entry],[data-ocr-exit]');

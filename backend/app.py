@@ -3,6 +3,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import BoundedSemaphore
 from urllib.parse import urlparse
 
 from .engine import ParkingEngine, ParkingError
@@ -10,7 +11,8 @@ from .ocr import recognize
 
 BASE = Path(__file__).resolve().parent.parent
 WEB = BASE / 'web'
-MAX_REQUEST = 4_300_000
+MAX_REQUEST = 10_500_000
+OCR_LOCK = BoundedSemaphore(1)  # Protect the memory-limited Render Free instance
 
 
 def make_handler(engine):
@@ -76,7 +78,12 @@ def make_handler(engine):
                 elif route == '/api/reset':
                     result = engine.reset()
                 else:
-                    result = recognize(payload.get('image'))
+                    if not OCR_LOCK.acquire(blocking=False):
+                        return self._json(503, {'error': '其他照片正在辨識，請稍後再試'})
+                    try:
+                        result = recognize(payload.get('image'), images=payload.get('images'))
+                    finally:
+                        OCR_LOCK.release()
                 self._json(200, result)
             except (ParkingError, ValueError, TypeError, json.JSONDecodeError) as exc:
                 self._json(400, {'error': str(exc)})
