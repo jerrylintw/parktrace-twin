@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from PIL import Image
 
-from backend.ocr import candidate_plates, recognize
+from backend.ocr import candidate_plates, recognize, _rectify_plate
 
 
 def photo_data_url():
@@ -34,6 +34,17 @@ class OcrTests(unittest.TestCase):
             result = recognize(photo_data_url())
         self.assertEqual(result['candidates'][0], 'ABC-1234')
         self.assertEqual(result['votes']['ABC-1234'], 3)
+
+
+    def test_perspective_detection_finds_light_plate(self):
+        # Synthetic license plate against a saturated car body. Does not embed
+        # any photo or plate number from a real visitor.
+        from PIL import ImageDraw
+        image = Image.new('RGB', (1000, 570), '#116c50')
+        ImageDraw.Draw(image).polygon([(110, 135), (860, 180), (810, 450), (90, 400)], fill='white')
+        plate = _rectify_plate(image)
+        self.assertIsNotNone(plate)
+        self.assertEqual(plate.shape[:2], (420, 1000))
 
     def test_reject_unsupported_format(self):
         with self.assertRaises(ValueError):

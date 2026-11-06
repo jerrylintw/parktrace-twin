@@ -17,7 +17,7 @@
 - **Cross-check**：如果觀測車牌與分配車牌不同，車位會紅色顯示並產生警示。
 - **Event snapshot replay**：每次操作都保存一份當下「車位陣列 + 候補佇列 + 觀測資料」快照。按事件可回到歷史畫面，但**不修改現況**。
 
-車牌辨識使用網站**左上方的筆電攝影機面板**（開啟鏡頭 → 拍照 → 拖曳框選車牌 → OCR）。後端以 Tesseract 搭配多組影像前處理產生候選，依辨識一致次數排序。OCR 只產生「候選車牌」，必須由人確認後才寫入正式進出場紀錄；不能當成無人值守商業辨識系統。
+車牌辨識使用網站**左上方的筆電攝影機面板**（開啟鏡頭 → 拍照 → 拖曳框選車牌 → OCR）。後端以 OpenCV 偵測白底車牌並校正透視角度，再使用 Tesseract 針對字母與數字分區辨識、比對多個裁切邊界，產生候選並依綜合分數排序。OCR 只產生「候選車牌」，必須由人確認後才寫入正式進出場紀錄；不能當成無人值守商業辨識系統。
 
 ## 功能
 
@@ -29,7 +29,7 @@
 | 車位觀測 | 記錄現場看到哪台車；不同則亮紅燈 | observations、events |
 | 快轉時間 | 不需要真的等 1 小時，網頁可快轉 15 分鐘至 1 天 | settings、events |
 | 事件回放 | 重播每次事件後的二維車位狀態 | events.snapshot_json |
-| 左上方相機 / 上傳圖片 | 可選筆電內建鏡頭、預覽、拍照及拖曳框選牌照；Python OCR 多種影像處理、候選排序、人工確認後帶入進出場 | **原始照片不保存** |
+| 左上方相機 / 上傳圖片 | 可選筆電內建鏡頭、預覽、拍照及拖曳框選牌照；Python OCR 多種影像處理、車牌透視校正、分段辨識、候選排序、人工確認後帶入進出場 | **原始照片不保存** |
 | 資料結構實驗室 | 直接視覺化四種資料結構的目前內容 | 每次讀取資料庫重建 |
 
 ## 使用了哪些資料結構？
@@ -96,16 +96,16 @@ python -m backend.app
 
 ### 本機使用 OCR
 
-OCR 需要 **Python 的 pytesseract**（已在 requirements）和作業系統的 **Tesseract 執行檔**：
+OCR 需要 **Python 的 OpenCV（opencv-python-headless）與 pytesseract**（均已在 requirements）和作業系統的 **Tesseract 執行檔**：
 
 - Windows：安裝 Tesseract OCR，並把安裝目錄（包含 `tesseract.exe`）加入 PATH。
 - macOS：`brew install tesseract`。
 - Ubuntu / Debian：`sudo apt install tesseract-ocr`。
 - Render：`Dockerfile` 已自動安裝 Tesseract，因此不必手動進伺服器安裝。
 
-**筆電鏡頭使用流程**：在頁面左上方選「啟動筆電鏡頭」→ 接受瀏覽器的攝影機使用權限 → 如有多個鏡頭可在「攝影機來源」切換 → 把車牌放大、對焦並保持水平 → 按「拍攝車牌」→ 如有需要在照片中拖曳框選 → 按「辨識車牌」→ 核對候選字串 → 點「帶入進場／帶入出場」，最後由使用者手動送出表單。拍照後會自動關閉攝影機；要重拍請重新啟動。
+**筆電鏡頭使用流程**：在頁面左上方選「開啟筆電攝影機」→ 接受瀏覽器的攝影機使用權限 → 如有多個鏡頭可在「攝影機來源」切換 → 把車牌放大、對焦並保持水平 → 按「拍攝車牌」→ 如有需要在照片中拖曳框選 → 按「辨識車牌」→ 核對候選字串 → 點「帶入進場／帶入出場」，最後由使用者手動送出表單。拍照後會自動關閉攝影機；要重拍請重新啟動。
 
-相機功能在 HTTPS 網站或 `localhost` 運作；一般 HTTP 網址通常無法開啟鏡頭。若無法使用鏡頭，請檢查瀏覽器權限及是否被 Teams／Zoom 佔用；也可改上傳 JPG／PNG／WebP（不超過 3MB）。OCR 的一致次數**不是機率或辨識準確度**，應在明亮、近距離及裁切車牌的條件下使用。若仍辨識不出來，請直接手動輸入車牌。
+相機功能在 HTTPS 網站或 `localhost` 運作；一般 HTTP 網址通常無法開啟鏡頭。若無法使用鏡頭，請檢查瀏覽器權限及是否被 Teams／Zoom 佔用；也可改上傳 JPG／PNG／WebP（不超過 3MB）。OCR 的綜合辨識分數**不是機率或辨識準確度**，應在明亮、近距離及裁切車牌的條件下使用。若仍辨識不出來，請直接手動輸入車牌。
 
 ## 2. 建立 GitHub Repository
 
@@ -125,9 +125,11 @@ git push -u origin main
 
 GitHub 可能要求登入或使用 Personal Access Token；如果你使用 VS Code 的 Source Control，也能直接「Publish to GitHub」。`.gitignore` 已排除本機 SQLite、虛擬環境、快取及環境檔案。**請勿把密碼、憑證、真實車牌資料上傳到公開 repo。**
 
-## 3. Render 部署（含資料庫）
+## 3. Render 部署（免費 SQLite 示範／PostgreSQL 選用）
 
-最簡單的方式是 Render **Blueprint**，因為專案已提供 `render.yaml` 和 `Dockerfile`：
+**目前已上線的示範網站使用免費 Docker Web Service + 暫存 SQLite，沒有設定 `DATABASE_URL`**：<https://parktrace-twin-demo.onrender.com>。若你要重建同樣的免費版本：選 Render → New → Web Service → 連接 GitHub `jerrylintw/parktrace-twin` → Runtime: Docker → Plan: Free → Region: Singapore，使用根目錄 `Dockerfile`，將 `PORT` 設為 `10000`（或交給 Render 自動設定）；**不要設定 `DATABASE_URL`**。資料僅存在服務暫時檔案系統，重啟或重新部署可能清空。
+
+如果未來要改用獨立 PostgreSQL，才選 Render **Blueprint**，因為專案提供 `render.yaml` 和 `Dockerfile`；此配置需要可用的獨立 PostgreSQL 額度：
 
 1. 登入 [Render Dashboard](https://dashboard.render.com/)，選擇 **New → Blueprint**。
 2. 授權連線上述 GitHub repository，選擇含 `render.yaml` 的 `main` 分支。
@@ -174,3 +176,12 @@ python -m unittest discover -s tests -v
 ---
 
 **Project Scope:** 可操作的單一課堂 demo；系統可靠性及辨識率未經真實場域驗證。
+
+
+## v1.2：車牌辨識改善
+
+- 左上方「開啟筆電攝影機」改為高對比、整列顯示、至少 62px 高的大按鈕。
+- Python 後端新增 **OpenCV 車牌範圍偵測與透視校正**，對傾斜的白底車牌優先校正後辨識；找不到可靠車牌區域時會回退原圖 OCR。
+- 擷取影像品質提高；優先將英文字母與數字分區辨識，數字區域使用多組邊界比對以減少 `8` 誤判為 `3` 或 `E` 的問題。
+- 以使用者提供的描邊字體 `CAT-8888` 圖片進行本機回歸驗證；此案例在相機畫面截圖的照片區域測得首選 `CAT-8888`。此結果僅代表測試個案，**不表示任何照片皆可百分之百正確**，尤其夜間、反光、過度模糊及非白底車牌仍可能失敗。
+- 候選「綜合辨識分數」只是投票加權，**不是 OCR 準確率百分比**；系統一律要求使用者人工確認後才正式登記車輛。

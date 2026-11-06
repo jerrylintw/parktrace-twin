@@ -282,7 +282,7 @@ $('#stop-camera').addEventListener('click',()=>stopCamera());
 cameraDevice.addEventListener('change',()=>{if (videoStream) startCamera();});
 $('#focus-camera').addEventListener('click',()=>{
   $('#camera-workbench').scrollIntoView({behavior:'smooth',block:'start'});
-  if (!videoStream && !sourcePhoto) setCameraStatus('請按「啟動筆電鏡頭」，瀏覽器會要求授權。');
+  if (!videoStream && !sourcePhoto) setCameraStatus('請按「開啟筆電攝影機」，瀏覽器會要求授權。');
 });
 function loadPhoto(dataUrl) {
   const img = new Image();
@@ -296,7 +296,7 @@ function loadPhoto(dataUrl) {
     drawPhoto();
     $('#ocr-result').replaceChildren();
     $('#ocr-result').innerHTML = '<strong>辨識結果</strong><span>照片已備妥，建議拖曳框選車牌，按「辨識車牌」。</span>';
-    setCameraStatus(`照片已載入（${img.naturalWidth}×${img.naturalHeight}），框選車牌可提高 OCR 準確度。`);
+    setCameraStatus(`照片已載入（${img.naturalWidth}×${img.naturalHeight}），系統會嘗試自動尋找車牌；手動框選可進一步減少干擾。`);
   };
   img.onerror=()=>setCameraStatus('圖片格式無法載入，請改用 JPG 或 PNG。',true);
   img.src = dataUrl;
@@ -373,7 +373,7 @@ function getPhotoData() {
   crop.width=Math.max(1,Math.round(sourceW*factor));
   crop.height=Math.max(1,Math.round(box.h*scaleY*factor));
   crop.getContext('2d').drawImage(sourcePhoto,box.x*scaleX,box.y*scaleY,sourceW,box.h*scaleY,0,0,crop.width,crop.height);
-  return crop.toDataURL('image/jpeg',.89);
+  return crop.toDataURL('image/jpeg',.96);
 }
 cameraOcr.addEventListener('click', async ()=>{
   if(!sourcePhoto){setCameraStatus('請先拍攝車牌或上傳照片。',true);return;}
@@ -386,10 +386,10 @@ cameraOcr.addEventListener('click', async ()=>{
     if(response.candidates?.length){
       const counts=response.votes || {};
       result.innerHTML='<strong>辨識候選車牌（請人工核對）</strong>'+response.candidates.map(p=>
-        `<div class="ocr-candidate"><b>${esc(p)}</b><small>一致結果 ${Number(counts[p]||1)} 次</small>`+
+        `<div class="ocr-candidate"><b>${esc(p)}</b><small>綜合辨識分數 ${Number(counts[p]||1)}</small>`+
         `<button type="button" data-ocr-entry="${esc(p)}">帶入進場</button><button type="button" data-ocr-exit="${esc(p)}">帶入出場</button></div>`
-      ).join('')+'<small>多次辨識一致 ≠ 保證正確。登記前請比對照片。</small>';
-      setCameraStatus(`找到 ${response.candidates.length} 組候選車牌。請核對後帶入表單。`);
+      ).join('')+'<small>透視校正及分段辨識可能降低誤判，但仍須逐字核對照片。</small>';
+      setCameraStatus(`找到 ${response.candidates.length} 組候選車牌${response.detected_plate?"（已自動校正車牌角度）":""}。請逐字核對。`);
     } else {
       result.innerHTML='<strong>本次未找到明確車牌</strong><span>請將車牌靠近鏡頭、增加光線、保持水平，或拍照後框選車牌重試；也可手動輸入。</span>';
       setCameraStatus('尚未辨識成功。可縮小框選範圍、提高亮度後再試。',true);

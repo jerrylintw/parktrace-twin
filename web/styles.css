@@ -48,3 +48,16 @@
 @media(max-width:580px){.top-dashboard{margin:16px 0}.top-dashboard .stats{grid-template-columns:repeat(2,minmax(0,1fr))}.top-dashboard .stat:last-child{grid-column:span 2}.camera-workbench{padding:15px}.camera-preview{height:210px}.camera-heading h2{font-size:16px}.camera-heading .camera-led{font-size:9px}}
 /* Prevent the mobile sidebar's horizontally scrollable navigation from stretching the page. */
 @media(max-width:850px){.shell{grid-template-columns:minmax(0,1fr)}.sidebar,.nav,.workspace,.top-dashboard,.camera-workbench{min-width:0;max-width:100%}.top-dashboard{grid-template-columns:minmax(0,1fr)}}
+
+/* v1.2: Make the webcam permission action immediately obvious and easy to tap. */
+.camera-buttons #start-camera{
+  grid-column:1 / -1;min-height:64px;padding:14px 17px;
+  background:#72e5c4;color:#062b2e;border:2px solid #a7f9e4;
+  border-radius:12px;font-size:17px;font-weight:900;
+  box-shadow:0 5px 20px #0a61453b;letter-spacing:.2px;
+}
+.camera-buttons #start-camera:hover{background:#a7f9e4;filter:none;transform:translateY(-1px)}
+.camera-buttons #start-camera:focus-visible{outline:3px solid #d4fff4;outline-offset:3px}
+.camera-buttons #snap-photo,.camera-buttons .upload-label{min-height:42px;font-size:12px}
+.camera-buttons #run-ocr{grid-column:1 / -1;min-height:44px;font-size:13px}
+@media(max-width:580px){.camera-buttons #start-camera{font-size:16px;min-height:62px}}
