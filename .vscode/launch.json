@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ParkTrace: 啟動本機停車場",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "backend.app",
+      "console": "integratedTerminal",
+      "env": {"PORT": "8000"},
+      "justMyCode": true
+    }
+  ]
+}

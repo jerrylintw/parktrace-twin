@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1724">
+  <meta name="description" content="ParkTrace Twin — 智慧停車場與資料結構視覺化模擬">
+  <title>ParkTrace Twin｜智慧停車場數位孿生</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="ParkTrace Twin 首頁">
+      <span class="brand-icon">P<span class="brand-point">·</span></span>
+      <span><strong>ParkTrace</strong><small>TWIN / DS LAB</small></span>
+    </a>
+    <div class="sidebar-label">CONTROL CENTER</div>
+    <nav class="nav" aria-label="主選單">
+      <button class="nav-link active" data-tab="overview"><span>▦</span> 即時總覽</button>
+      <button class="nav-link" data-tab="vehicles"><span>▤</span> 車輛與帳單</button>
+      <button class="nav-link" data-tab="algorithms"><span>◫</span> 資料結構實驗室</button>
+      <button class="nav-link" data-tab="history"><span>◷</span> 事件時間軸</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <span class="live-status"><i></i> SIMULATION ONLINE</span>
+      <p>這是可公開操作的課堂展示站，請勿輸入真實個資。操作與紀錄會共用後端資料庫。</p>
+      <div class="version">資料結構期中 Project <b>v1.0</b></div>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div><span class="eyebrow">SMART MOBILITY / DIGITAL TWIN</span><h1>智慧停車場 <em>數位孿生</em></h1></div>
+      <div class="topbar-right"><div class="clock-display"><span>模擬系統時間（台灣）</span><strong id="system-time">—</strong></div><span class="mode-pill">DEMO MODE</span></div>
+    </header>
+
+    <main>
+      <section class="stats" aria-label="停車場即時數據">
+        <article class="stat"><span>總車位數 <i>↗</i></span><div class="stat-value" id="metric-total">—</div><small>3 區 / 18 個停車位</small></article>
+        <article class="stat"><span>場內車輛 <i>◉</i></span><div class="stat-value" id="metric-occupied">—</div><small id="metric-rate">空間使用率 —</small></article>
+        <article class="stat"><span>剩餘一般車位 <i>▣</i></span><div class="stat-value blue" id="metric-free">—</div><small>包含特殊車位的總空位數</small></article>
+        <article class="stat"><span>候補等候 <i>◷</i></span><div class="stat-value" id="metric-waiting">—</div><small>FIFO / 先進先出</small></article>
+        <article class="stat"><span>累積模擬收入 <i>NT$</i></span><div class="stat-value" id="metric-revenue">—</div><small>僅計入已完成出場</small></article>
+      </section>
+
+      <div class="tab-panel" id="tab-overview">
+        <div class="layout-main">
+          <div class="column-main">
+            <section class="panel lot-panel">
+              <div class="panel-head"><div><span class="section-kicker">DIGITAL TWIN / LIVE MAP</span><h2>停車場即時配置</h2><p>實心車位為系統分配；觀測錯位會顯示橘紅警示。</p></div><div class="legend"><span><i class="legend-dot free"></i>空車位</span><span><i class="legend-dot busy"></i>已分配</span><span><i class="legend-dot conflict"></i>異常</span></div></div>
+              <div class="lot-entry"><span>↓</span> ENTRY GATE <div></div><span>EXIT GATE</span><span>↑</span></div>
+              <div class="lot" id="parking-grid" aria-label="即時車位圖"></div>
+              <div class="lot-key"><span>◆ 無障礙車位</span><span>ϟ 充電車位</span><span>點選車位可帶入觀測表單</span></div>
+            </section>
+            <section class="panel anomalies-panel"><div class="panel-head compact"><div><span class="section-kicker">SHADOW / CROSS-CHECK</span><h2>雙軌觀測差異</h2></div><span class="count-tag" id="alert-count">0 筆警示</span></div><div id="anomalies"></div></section>
+          </div>
+          <div class="column-side">
+            <section class="panel action-panel">
+              <div class="panel-head compact"><div><span class="section-kicker">GATE CONTROL</span><h2>模擬車輛進出</h2></div><button id="open-camera" class="icon-btn" title="開啟攝影機辨識">◎ 攝影機</button></div>
+              <form id="entry-form" class="form-stack"><label for="entry-plate">入場車牌</label><input id="entry-plate" placeholder="例：ABC-1234" maxlength="9" autocomplete="off" required><label for="vehicle-type">車輛類型</label><select id="vehicle-type"><option value="normal">一般車輛</option><option value="ev">電動車（優先充電車位）</option><option value="accessible">無障礙（優先專用車位）</option></select><button class="btn primary" type="submit">＋ 登記進場 / 自動配位</button></form>
+              <div class="form-divider">GATE OUT / CHECKOUT</div>
+              <form id="exit-form" class="form-stack"><label for="exit-plate">出場車牌</label><input id="exit-plate" placeholder="輸入已入場車牌" maxlength="9" autocomplete="off" required><button class="btn secondary" type="submit">計算費用並出場 →</button></form>
+              <p class="helper">超過前 10 分鐘的免費時間後，每開始 30 分鐘 NT$20；每 24 小時上限 NT$240。</p>
+            </section>
+            <section class="panel action-panel"><div class="panel-head compact"><div><span class="section-kicker">FIELD OBSERVATION</span><h2>車位觀測模擬</h2></div></div><form id="observe-form" class="form-stack"><label for="observe-spot">實際觀測車位</label><select id="observe-spot"></select><label for="observe-plate">觀測到的車牌（留空＝清除）</label><input id="observe-plate" placeholder="輸入不同車牌測試警示" maxlength="9"><button type="submit" class="btn outline">↗ 更新現場觀測</button></form></section>
+            <section class="panel time-panel"><div class="panel-head compact"><div><span class="section-kicker">TIME MACHINE</span><h2>快轉模擬時間</h2></div></div><div class="time-buttons"><button data-minutes="15">+15 分</button><button data-minutes="30">+30 分</button><button data-minutes="60">+1 小時</button><button data-minutes="180">+3 小時</button><button data-minutes="1440">+1 天</button></div><p>免等待即可測試跨日費率；所有時間由後端計算。</p></section>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel hidden" id="tab-vehicles">
+        <div class="section-intro"><span class="section-kicker">VEHICLE RECORDS</span><h2>場內名冊與出場收據</h2><p>後端 PostgreSQL／SQLite 紀錄停車起訖時間、車位和應付金額；重新整理資料不會消失。</p></div>
+        <div class="two-panels">
+          <section class="panel"><div class="panel-head compact"><h3>正在停放 <span class="muted">ACTIVE</span></h3></div><div class="table-wrap"><table><thead><tr><th>車牌</th><th>車位</th><th>進場時間</th><th>暫估費用</th></tr></thead><tbody id="active-table"></tbody></table></div></section>
+          <section class="panel"><div class="panel-head compact"><h3>候補佇列 <span class="muted">QUEUE / FIFO</span></h3></div><div id="waiting-list" class="queue-list"></div></section>
+        </div>
+        <section class="panel receipt-panel"><div class="panel-head compact"><h3>已完成停車紀錄 <span class="muted">PAYMENT HISTORY</span></h3></div><div class="table-wrap"><table><thead><tr><th>車牌</th><th>停車位</th><th>進場</th><th>出場</th><th>實收</th></tr></thead><tbody id="receipts-table"></tbody></table></div></section>
+      </div>
+
+      <div class="tab-panel hidden" id="tab-algorithms">
+        <div class="section-intro"><span class="section-kicker">DATA STRUCTURES IN ACTION</span><h2>演算法運作實驗室</h2><p>每個結構都對應真的停車資料，不是寫在簡報裡的名詞。</p></div>
+        <div class="algorithm-cards">
+          <section class="panel algorithm-card"><div class="algorithm-heading"><span class="algorithm-index">01</span><div><h3>2D Array <small>二維陣列</small></h3><p>依列 / 行儲存 A、B、C 區各 6 格車位。</p></div></div><pre id="ds-array"></pre><div class="complexity">索引 O(1) ・尋找可用車位 O(n)</div></section>
+          <section class="panel algorithm-card"><div class="algorithm-heading"><span class="algorithm-index">02</span><div><h3>Queue <small>先進先出</small></h3><p>車位不夠時 Enqueue，出場後 Dequeue 補位。</p></div></div><div class="ds-visual" id="ds-queue"></div><div class="complexity">deque 入隊 / 出隊 O(1)</div></section>
+          <section class="panel algorithm-card"><div class="algorithm-heading"><span class="algorithm-index">03</span><div><h3>Stack <small>後進先出</small></h3><p>將事件 Push 到堆疊，再 Pop 顯示最近操作。</p></div></div><div class="ds-visual" id="ds-stack"></div><div class="complexity">Push / Pop O(1) ・不刪除永久日誌</div></section>
+          <section class="panel algorithm-card"><div class="algorithm-heading"><span class="algorithm-index">04</span><div><h3>Doubly Linked List <small>雙向鏈結串列</small></h3><p>每輛車都有 prev / next 指標，串接停放順序。</p></div></div><div class="ds-visual" id="ds-linked"></div><div class="complexity">首尾插入 O(1) ・依車牌搜尋 O(n)</div></section>
+        </div>
+        <section class="panel explanation"><h3>這個專案和一般停車場模擬有何差異？</h3><p>我們分別保存 <b>Assigned（資料庫分配車位）</b> 和 <b>Observed（攝影機或人工觀測車位）</b>。兩者不同時直接標示衝突；每個事件另外保存一份狀態快照，讓你回放當時的車位變化。這些設計用於查出「有進場紀錄但車停錯格」等情形。</p></section>
+      </div>
+
+      <div class="tab-panel hidden" id="tab-history">
+        <div class="section-intro"><span class="section-kicker">EVENT SOURCING / REPLAY</span><h2>車位歷史回放</h2><p>點選任一事件，將車位圖切換到當時的資料庫快照。回放不會改動現在的車位。</p></div>
+        <div class="replay-layout"><section class="panel"><div class="panel-head compact"><h3>事件日誌</h3><span class="muted">最近 35 筆</span></div><div id="timeline" class="timeline"></div></section><section class="panel"><div class="panel-head compact"><div><h3 id="replay-title">歷史車位快照</h3><p class="muted" id="replay-time">請從左側選擇事件</p></div><button class="text-btn" id="replay-live">回到即時</button></div><div id="replay-grid" class="lot replay-lot"></div><div id="replay-queue" class="replay-waiting"></div></section></div>
+      </div>
+    </main>
+    <footer>ParkTrace Twin · Demo-only project · Python + HTML + CSS + JavaScript · 自訂規則可在 <code>backend/engine.py</code> 修改 <button class="text-btn danger" id="reset-btn">重置所有模擬資料</button></footer>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div class="modal hidden" id="camera-modal" role="dialog" aria-modal="true" aria-label="攝影機 OCR 車牌辨識">
+  <div class="modal-backdrop" data-close-camera></div>
+  <div class="modal-content"><div class="modal-header"><div><span class="section-kicker">REAL CAMERA / OCR</span><h2>拍照辨識車牌</h2></div><button class="icon-btn" id="close-camera" aria-label="關閉">✕</button></div><p>允許瀏覽器使用攝影機，或直接上傳照片；可在預覽圖拖曳框選車牌以提高辨識率。照片不會保存到資料庫。</p><video id="camera-video" autoplay muted playsinline></video><canvas id="camera-canvas" width="640" height="360" aria-label="車牌照片預覽與裁切"></canvas><div class="camera-actions"><button class="btn outline" id="start-camera">開啟鏡頭</button><button class="btn outline" id="snap-photo">拍攝畫面</button><label class="btn outline upload-label">從裝置選圖<input type="file" id="upload-photo" accept="image/*" capture="environment" hidden></label><button class="btn primary" id="run-ocr">辨識此照片</button></div><div id="ocr-result" class="ocr-result">尚未拍攝。攝影機通常需要 HTTPS 或 localhost 才能啟用。</div></div>
+</div>
+</body>
+</html>
